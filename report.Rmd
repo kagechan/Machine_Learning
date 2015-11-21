@@ -1,0 +1,160 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Yoshiteru Kageyama"
+date: "November 14, 2015"
+output: html_document
+---
+## Executive summary
+In this assignment, I downloaded the personal activity data that were derived
+from the source http://groupware.les.inf.puc-rio.br/har. I applied the data
+to a machine learning algorithm, random forest model to predict how a participant
+exercised with a dumbbell, which was classified in five categories(class A to E). 
+This algorithm resulted in the very precise prediction to the five categories.
+
+## Read the training and testing data
+First, I read the given training and testing data from the Internet.
+
+```{r warning=FALSE, cache=TRUE}
+training_data <- 'pml-training.csv'
+testing_data <- 'pml-testing.csv'
+if (!file.exists(training_data)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                destfile=training_data)
+}
+if (!file.exists(testing_data)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                destfile=testing_data)
+}
+pml_train <- read.csv(file=training_data, header=T)
+pml_test  <- read.csv(file=testing_data, header=T)
+```
+
+## Cleaning the training data
+
+I found that several columns in the pml_train data frame were regarded as a factor.
+After looking into them, I found that they contained blanks and some strange values,
+for example, "!DIV/0".
+So, I converted them into numeric values forcefully.
+
+```{r warning = FALSE, cache=TRUE}
+for(col in c("kurtosis_roll_belt", "kurtosis_picth_belt", "kurtosis_yaw_belt",
+             "skewness_roll_belt", "skewness_roll_belt.1", "skewness_yaw_belt",
+             "max_yaw_belt", "min_yaw_belt",
+             "kurtosis_roll_arm", "kurtosis_picth_arm", "kurtosis_yaw_arm",
+             "skewness_roll_arm", "skewness_pitch_arm", "skewness_yaw_arm",
+             "kurtosis_roll_dumbbell", "kurtosis_picth_dumbbell", "kurtosis_yaw_dumbbell",
+             "skewness_roll_dumbbell", "skewness_pitch_dumbbell", "skewness_yaw_dumbbell",
+             "max_yaw_dumbbell", "min_yaw_dumbbell",
+             "amplitude_yaw_belt","amplitude_yaw_dumbbell",
+             "kurtosis_roll_forearm", "kurtosis_picth_forearm", "kurtosis_yaw_forearm",
+             "skewness_roll_forearm", "skewness_pitch_forearm", "skewness_yaw_forearm",
+             "max_yaw_forearm", "min_yaw_forearm",
+             "amplitude_yaw_forearm"
+             )) {
+  colNum <- levels(pml_train[,col])[pml_train[,col]]
+  pml_train[,col] <- as.numeric(colNum)
+  colNum <- levels(pml_test[,col])[pml_test[,col]]
+  pml_test[,col] <- as.numeric(colNum)
+}
+#summary(pml_train)
+```
+
+When I tried to apply these data to some machine learning algorithms, using the
+columns that contained a lot of NAs wasn't appropriate. So I omitted them in advance.
+
+```{r cache=TRUE}
+pml_train <- pml_train[, colSums(!is.na(pml_train)) == nrow(pml_train)]
+pml_test <-pml_test[, colSums(!is.na(pml_test)) == nrow(pml_test)]
+```
+
+Furthermore, the following columns should be omitted: 
+
+- user_name
+- timestamp values
+- new_window and num_window
+- total acceleration values and their standard deviation
+
+Because these variables don't have anything to do with predicting the classe in
+applying a machine learning algorithm.
+
+```{r cache=TRUE}
+pml_train <- pml_train[, -which(colnames(pml_train) %in% c("X", "user_name",
+                            "raw_timestamp_part_1", "raw_timestamp_part_2",
+                            "cvtd_timestamp", "new_window", "num_window",
+                            "total_accel_belt", "total_accel_arm", "total_accel_dumbbell"
+                            ))]
+pml_test <- pml_test[, -which(colnames(pml_test) %in% c("X", "user_name",
+                            "raw_timestamp_part_1", "raw_timestamp_part_2",
+                            "cvtd_timestamp", "new_window", "num_window",
+                            "total_accel_belt", "total_accel_arm", "total_accel_dumbbell"
+                            ))]
+summary(pml_train)
+```
+
+This summary showed us that all data were appropriate to apply some machine
+learning algorithm (there isn't any NA, and all the data were well-balanced).
+
+The meaning of the classe column is as follows:
+
+| Class    |   Meaning                               |
+|:--------:|:----------------------------------------|
+|   A      | Exactly according to the specification  |
+|   B      | Throwing the elbows to the front        |
+|   C      | Lifting the dumbbell only halfway       |
+|   D      | Lowering the dumbbell only halfway      |
+|   E      | Throwing the hips to the front          |
+
+## Select and create the machine learning model
+
+At first, I selected the random forest as a learning model for the training data,
+because generally speaking, the randowm forest algorithm is suitable to fit
+the classification problem like this assignment.
+I tried to create data partition to pml_train data and fit the new training data
+to the random forest model.(It took a lot of time...)
+
+```{r cache=TRUE}
+pml_train.inTrain <- createDataPartition(y=pml_train$classe, p=0.7, list=FALSE)
+pml_train.train   <- pml_train[pml_train.inTrain,]
+pml_train.test    <- pml_train[-pml_train.inTrain,]
+modFit <- train(classe ~ ., data=pml_train.train, 
+                method="rf", ntree=100)
+```
+
+Now I checked if the created model is accurate enough to predict the classe using
+the test cases take from the training data.
+
+```{r}
+pml_train.predict <- predict(modFit, pml_train.test)
+table(pml_train.predict, pml_train.test$classe)
+pml_train.predict.accuracy <- 
+  sum(pml_train.predict == pml_train.test$classe) / length(pml_train.predict)
+```
+
+The accuracy rate of the model I've just created is as follows:
+```{r}
+print(pml_train.predict.accuracy)
+```
+
+I believe this result is encouraging enough to use it as a predictor for the
+test data.
+
+# Predicting The Results
+
+So, I applied the acquired learning model to the 20 test data.
+
+```{r}
+# this function was taken from the Coursera instruction page.
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+# try to predict answers
+answers <- as.character(predict(modFit, newdata=pml_test))
+pml_write_files(answers)
+```
+I submitted the prediction results into the "Prediction Assignment Submission" page
+on the Coursera and found that all of them were correct.
